@@ -24,7 +24,19 @@ class Settings:
     # Discord Integration
     DISCORD_WEBHOOK_URL: str = os.getenv("DISCORD_WEBHOOK_URL", "")
     DISCORD_BOT_TOKEN: str = os.getenv("DISCORD_BOT_TOKEN", "")
-    DISCORD_CHANNEL_ID: int = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
+    # Dual-channel support: A+ setups (full risk) and Half Risk (0.25/0.5R) setups
+    DISCORD_APLUS_CHANNEL_ID: int = int(os.getenv("DISCORD_APLUS_CHANNEL_ID", "0"))
+    DISCORD_HALFRISK_CHANNEL_ID: int = int(os.getenv("DISCORD_HALFRISK_CHANNEL_ID", "0"))
+    
+    @property
+    def MONITORED_CHANNELS(self) -> dict:
+        """Returns a mapping of channel_id -> risk_profile."""
+        channels = {}
+        if self.DISCORD_APLUS_CHANNEL_ID:
+            channels[self.DISCORD_APLUS_CHANNEL_ID] = {"label": "A+ Setup", "risk": 1.0}
+        if self.DISCORD_HALFRISK_CHANNEL_ID:
+            channels[self.DISCORD_HALFRISK_CHANNEL_ID] = {"label": "Half Risk", "risk": 0.25}
+        return channels
 
     def validate(self):
         """Validate critical configuration combinations."""

@@ -157,7 +157,12 @@ class AuQuantClient(discord.Client):
 
     async def on_ready(self):
         logger.info(f"Logged in as {self.user.name} (ID: {self.user.id})")
-        logger.info(f"Monitoring channel ID: {settings.DISCORD_CHANNEL_ID}")
+        monitored = settings.MONITORED_CHANNELS
+        if monitored:
+            for ch_id, profile in monitored.items():
+                logger.info(f"Monitoring channel {ch_id} -> {profile['label']} (risk: {profile['risk']}R)")
+        else:
+            logger.warning("No channels configured! Set DISCORD_APLUS_CHANNEL_ID / DISCORD_HALFRISK_CHANNEL_ID in .env")
         print(f"Au Quant Bot Discord Client is ONLINE. Running as {self.user.name}.")
 
     async def on_message(self, message):
@@ -165,9 +170,13 @@ class AuQuantClient(discord.Client):
         if message.author.id == self.user.id:
             return
             
-        # Ignore messages in other channels if a specific channel is configured
-        if settings.DISCORD_CHANNEL_ID and message.channel.id != settings.DISCORD_CHANNEL_ID:
+        # Only process messages from monitored channels
+        monitored = settings.MONITORED_CHANNELS
+        if monitored and message.channel.id not in monitored:
             return
+        
+        # Get risk profile for this channel
+        channel_profile = monitored.get(message.channel.id, {"label": "Unknown", "risk": 1.0})
 
         # Parse message content
         signal = parse_discord_message(message.content)
@@ -202,13 +211,22 @@ class AuQuantClient(discord.Client):
                 return
                 
             try:
+                # Tag with risk category from channel profile
+                risk_label = channel_profile["label"]
+                risk_value = channel_profile["risk"]
+                technique_tag = signal["technique"] or ""
+                if technique_tag:
+                    technique_tag = f"[{risk_label}] {technique_tag}"
+                else:
+                    technique_tag = f"[{risk_label}]"
+
                 trade_id = self.db.add_trade({
                     "pair": "XAUUSD",
                     "direction": signal["direction"],
                     "entry_price": signal["entry_price"],
                     "sl": signal["sl"],
                     "tp": signal["tp"],
-                    "technique": signal["technique"],
+                    "technique": technique_tag,
                     "session": signal["session"],
                     "timeframe": signal["timeframe"],
                     "confirmations": signal["confirmations"],
@@ -216,13 +234,15 @@ class AuQuantClient(discord.Client):
                     "is_risk_free": 0
                 })
                 
+                risk_emoji = "🟢" if risk_value >= 1.0 else "🟡"
                 embed = discord.Embed(
-                    title="🔔 XAUUSD Position Logged",
-                    description=f"Logged a new active position via Discord.",
-                    color=discord.Color.blue()
+                    title=f"{risk_emoji} XAUUSD Position Logged — {risk_label}",
+                    description=f"Logged a new **{risk_label}** position ({risk_value}R risk) via Discord.",
+                    color=discord.Color.blue() if risk_value >= 1.0 else discord.Color.gold()
                 )
                 embed.add_field(name="Trade ID", value=f"`{trade_id}`", inline=True)
                 embed.add_field(name="Direction", value=signal["direction"], inline=True)
+                embed.add_field(name="Risk", value=f"{risk_value}R", inline=True)
                 embed.add_field(name="Entry Price", value=str(signal["entry_price"]), inline=True)
                 embed.add_field(name="SL", value=str(signal["sl"]), inline=True)
                 embed.add_field(name="TP", value=str(signal["tp"]), inline=True)
