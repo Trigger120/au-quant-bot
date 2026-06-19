@@ -1,0 +1,57 @@
+name: Daily Trading Strategy Autopsy
+
+on:
+  schedule:
+    # Run every weekday at 22:00 UTC (Market close approx)
+    - cron: '0 22 * * 1-5'
+  workflow_dispatch:
+    # Allows manual triggering from the GitHub Actions tab
+
+jobs:
+  analyze_and_report:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # Crucial to allow committing reports back to the repository
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Performance Autopsy
+      env:
+        # Load environment variables from GitHub Repository Secrets
+        DATABASE_TYPE: ${{ secrets.DATABASE_TYPE }}
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        GOOGLE_SPREADSHEET_ID: ${{ secrets.GOOGLE_SPREADSHEET_ID }}
+        GOOGLE_SERVICE_ACCOUNT_CREDENTIALS: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_CREDENTIALS }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: |
+        python analyzer.py
+
+    - name: Commit and Push Daily Analysis Report
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        
+        # Check if there are any new files or modifications in the reports folder
+        git add reports/
+        
+        # Commit if changes exist
+        if git diff-index --quiet HEAD --; then
+          echo "No new reports generated today."
+        else
+          git commit -m "docs(reports): archive daily trading autopsy [skip ci]"
+          git push
+        fi

@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XAUUSD Quant Lab & Strategy Optimizer</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --card-bg: rgba(17, 24, 39, 0.7);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --neon-gold: #fbbf24;
+            --neon-gold-glow: rgba(251, 191, 36, 0.2);
+            --neon-green: #10b981;
+            --neon-green-glow: rgba(16, 185, 129, 0.2);
+            --neon-rose: #f43f5e;
+            --neon-rose-glow: rgba(244, 63, 94, 0.2);
+            --neon-blue: #3b82f6;
+            --neon-blue-glow: rgba(59, 130, 246, 0.25);
+            --neon-amber: #f59e0b;
+            --neon-amber-glow: rgba(245, 158, 11, 0.2);
+            --sidebar-width: 280px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(251, 191, 36, 0.05) 0%, transparent 45%),
+                radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 45%);
+        }
+
+        /* Ambient Glow Blobs */
+        .glow-blob {
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            border-radius: 50%;
+            filter: blur(120px);
+            z-index: -1;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        .glow-1 {
+            top: -100px;
+            right: 10%;
+            background-color: rgba(251, 191, 36, 0.08);
+        }
+        .glow-2 {
+            bottom: -100px;
+            left: 5%;
+            background-color: rgba(16, 185, 129, 0.08);
+        }
+
+        /* Sidebar navigation */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: rgba(10, 15, 26, 0.85);
+            border-right: 1px solid var(--card-border);
+            padding: 2rem 1.5rem;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(20px);
+            position: fixed;
+            height: 100vh;
+            left: 0;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 3rem;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--neon-gold), var(--neon-green));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-family: 'Space Grotesk', sans-serif;
+            color: #111827;
+            box-shadow: 0 0 15px var(--neon-gold-glow);
+        }
+
+        .logo-text {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #ffffff, var(--neon-gold));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.85rem 1rem;
+            border-radius: 10px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-item.active {
+            border-left: 3px solid var(--neon-gold);
+            background: rgba(251, 191, 36, 0.08);
+        }
+
+        .nav-item svg {
+            width: 20px;
+            height: 20px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+        }
+
+        .server-status {
+            margin-top: auto;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            padding: 1rem;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background-color: var(--neon-rose);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--neon-rose-glow);
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.online {
+            background-color: var(--neon-green);
+            box-shadow: 0 0 8px var(--neon-green-glow);
+        }
+
+        .status-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        /* Main Content Panel */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            flex: 1;
+            padding: 2.5rem;
+            max-width: 1400px;
+            position: relative;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+        }
+
+        .header-title h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #ffffff 0%, var(--neon-gold) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-title p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-top: 0.25rem;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text-primary);
+            padding: 0.75rem 1.25rem;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--neon-gold), var(--neon-amber));
+            border: none;
+            color: #111827;
+            box-shadow: 0 4px 15px rgba(251, 191, 36, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, var(--neon-amber), #d97706);
+            box-shadow: 0 6px 20px rgba(251, 191, 36, 0.45);
+        }
+
+        /* Dashboard Tab */
+        .tab-panel {
+            display: none;
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Metrics grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease, border-color 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-3px);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+        }
+
+        .metric-winrate::before { background-color: var(--neon-green); }
+        .metric-pnl::before { background-color: var(--neon-gold); }
+        .metric-factor::before { background-color: var(--neon-amber); }
+        .metric-trades::before { background-color: var(--text-secondary); }
+
+        .metric-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-val {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 2.25rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+        }
+
+        .metric-sub {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* Grid Charts & Directives */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 18px;
+            padding: 1.75rem;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: -0.2px;
+        }
+
+        /* Directives lists styling */
+        .directive-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .directive-item {
+            padding: 1rem;
+            border-radius: 12px;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            border: 1px solid transparent;
+        }
+
+        .directive-double {
+            background: rgba(16, 185, 129, 0.05);
+            border-color: rgba(16, 185, 129, 0.15);
+        }
+        .directive-double .directive-icon {
+            color: var(--neon-green);
+            background: var(--neon-green-glow);
+        }
+
+        .directive-change {
+            background: rgba(245, 158, 11, 0.05);
+            border-color: rgba(245, 158, 11, 0.15);
+        }
+        .directive-change .directive-icon {
+            color: var(--neon-amber);
+            background: var(--neon-amber-glow);
+        }
+
+        .directive-stop {
+            background: rgba(244, 63, 94, 0.05);
+            border-color: rgba(244, 63, 94, 0.15);
+        }
+        .directive-stop .directive-icon {
+            color: var(--neon-rose);
+            background: var(--neon-rose-glow);
+        }
+
+        .directive-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-weight: bold;
+        }
+
+        .directive-body h4 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .directive-body p {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        /* Webhook Simulator Form */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.25rem;
+        }
+
+        .form-full {
+            grid-column: span 2;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .form-control {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            color: var(--text-primary);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            outline: none;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+        }
+
+        .form-control:focus {
+            border-color: var(--neon-gold);
+            background: rgba(255, 255, 255, 0.06);
+            box-shadow: 0 0 10px var(--neon-gold-glow);
+        }
+
+        /* Checkboxes for confirmations */
+        .confirmations-checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .checkbox-item input {
+            accent-color: var(--neon-gold);
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
+            width: 100%;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            padding: 1rem;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        td {
+            padding: 1rem;
+            font-size: 0.9rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .badge {
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-won {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--neon-green);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .badge-lost {
+            background-color: rgba(244, 63, 94, 0.1);
+            color: var(--neon-rose);
+            border: 1px solid rgba(244, 63, 94, 0.2);
+        }
+
+        .badge-open {
+            background-color: rgba(59, 130, 246, 0.1);
+            color: var(--neon-blue);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        /* Webhook Response Log */
+        .response-box {
+            background: rgba(10, 15, 26, 0.9);
+            border: 1px solid var(--card-border);
+            padding: 1.25rem;
+            border-radius: 12px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #34d399;
+            margin-top: 1.5rem;
+            white-space: pre-wrap;
+            display: none;
+        }
+
+        /* Glassmorphic Edit Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 15, 26, 0.75);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            width: 90%;
+            max-width: 650px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 2rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            animation: modalFadeIn 0.3s ease;
+            position: relative;
+        }
+
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 1rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .modal-close:hover {
+            color: var(--neon-rose);
+        }
+    </style>
+</head>
+<body>
+    <div class="glow-blob glow-1"></div>
+    <div class="glow-blob glow-2"></div>
+
+    <!-- Sidebar navigation -->
+    <div class="sidebar">
+        <div class="logo-container">
+            <div class="logo-icon">Au</div>
+            <div class="logo-text">XAUUSD LAB</div>
+        </div>
+
+        <ul class="nav-list">
+            <li class="nav-item active" onclick="switchTab('dashboard', this)">
+                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                Dashboard
+            </li>
+            <li class="nav-item" onclick="switchTab('simulator', this)">
+                <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+                Webhook Simulator
+            </li>
+            <li class="nav-item" onclick="switchTab('logs', this)">
+                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                Trade Journal Logs
+            </li>
+        </ul>
+
+        <div class="server-status">
+            <div id="statusDot" class="status-dot"></div>
+            <div class="status-label" id="statusLabel">DISCONNECTED</div>
+        </div>
+    </div>
+
+    <!-- Main Content Panel -->
+    <div class="main-content">
+        <header>
+            <div class="header-title">
+                <h1 id="pageTitle">GOLD confirmation Optimizer</h1>
+                <p id="pageSubtitle">Statistical autopsies on XAUUSD sessions, structures, and confirmations</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn" onclick="fetchLiveStats()"><svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.5;vertical-align:middle" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg> Reload Server Data</button>
+            </div>
+        </header>
+
+        <!-- Tab 1: Dashboard -->
+        <div id="tab-dashboard" class="tab-panel active">
+            <!-- Metrics Row -->
+            <div class="metrics-grid">
+                <div class="metric-card metric-winrate">
+                    <div class="metric-label">GOLD Win Rate</div>
+                    <div class="metric-val" id="stat-winrate">0.0%</div>
+                    <div class="metric-sub" id="stat-winslosses">0 Wins / 0 Losses</div>
+                </div>
+                <div class="metric-card metric-pnl">
+                    <div class="metric-label">Net R performance</div>
+                    <div class="metric-val" id="stat-netr">+0.00R</div>
+                    <div class="metric-sub">Expectancy factor</div>
+                </div>
+                <div class="metric-card metric-factor">
+                    <div class="metric-label">Profit Factor</div>
+                    <div class="metric-val" id="stat-pf">1.00</div>
+                    <div class="metric-sub">R-Profit vs Loss ratio</div>
+                </div>
+                <div class="metric-card metric-trades">
+                    <div class="metric-label">GOLD Logs</div>
+                    <div class="metric-val" id="stat-total">0</div>
+                    <div class="metric-sub">Total database closed entries</div>
+                </div>
+            </div>
+
+            <!-- Charts Row 1 -->
+            <div class="content-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Cumulative Performance (R-Expectancy Curve)</div>
+                    </div>
+                    <div style="height: 300px; position: relative;">
+                        <canvas id="pnlChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Primary Loss Autopsy</div>
+                    </div>
+                    <div style="height: 300px; position: relative;">
+                        <canvas id="failuresChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Directives & Session/Confirmation Stats -->
+            <div class="content-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🎯 Actionable Trading Directive</div>
+                    </div>
+                    <div class="directive-section" id="directiveContainer">
+                        <div class="directive-item directive-double">
+                            <div class="directive-icon">🔥</div>
+                            <div class="directive-body">
+                                <h4>Double Down Setups</h4>
+                                <p>Ensure you continue executing these strategies. High win rate and high profit expectancy detected.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Expectancy by Session (Net R)</div>
+                    </div>
+                    <div style="height: 320px; position: relative;">
+                        <canvas id="sessionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Confirmations Bar Card -->
+            <div class="card" style="margin-top: 2rem;">
+                <div class="card-header">
+                    <div class="card-title">Win Rate by Confirmation Tag</div>
+                </div>
+                <div style="height: 250px; position: relative;">
+                    <canvas id="confirmationChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Webhook Simulator -->
+        <div id="tab-simulator" class="tab-panel">
+            <div class="card" style="max-width: 800px; margin: 0 auto;">
+                <div class="card-header">
+                    <div class="card-title">Gold Signal Simulator (Ingest Verification)</div>
+                </div>
+                <div style="margin-bottom: 1.5rem; color: var(--text-secondary); font-size: 0.9rem;">
+                    Broadcast synthetic Gold (XAUUSD) trading signals directly to your FastAPI backend to test schema logs and confirm integrations.
+                </div>
+
+                <form id="simulatorForm" onsubmit="triggerSimulation(event)">
+                    <div class="form-grid">
+                        <div class="form-group form-full">
+                            <label for="sim_apikey">X-API-KEY Authorization Header</label>
+                            <input type="text" id="sim_apikey" class="form-control" value="test-api-key" placeholder="Enter API Key">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="sim_action">Signal endpoint Trigger</label>
+                            <select id="sim_action" class="form-control" onchange="toggleFormInputs()">
+                                <option value="open">POST /trades/open (Open Gold Position)</option>
+                                <option value="close">POST /trades/close (Close Gold Position)</option>
+                                <option value="log">POST /trades/log (Direct Log completed trade)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="sim_id">Trade ID</label>
+                            <input type="text" id="sim_id" class="form-control" placeholder="Automatic or manual ID input">
+                        </div>
+
+                        <!-- Open Specifics -->
+                        <div class="form-group sim-open-only">
+                            <label for="sim_pair">Pair / Asset</label>
+                            <input type="text" id="sim_pair" class="form-control" value="XAUUSD" readonly>
+                        </div>
+
+                        <div class="form-group sim-open-only">
+                            <label for="sim_dir">Direction</label>
+                            <select id="sim_dir" class="form-control">
+                                <option value="BUY">BUY</option>
+                                <option value="SELL">SELL</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group sim-open-only">
+                            <label for="sim_entry">Entry Price ($)</label>
+                            <input type="number" step="any" id="sim_entry" class="form-control" value="2350.00">
+                        </div>
+
+                        <div class="form-group sim-open-only">
+                            <label for="sim_sl">Stop Loss (SL) ($)</label>
+                            <input type="number" step="any" id="sim_sl" class="form-control" value="2340.00">
+                        </div>
+
+                        <div class="form-group sim-open-only">
+                            <label for="sim_tp">Take Profit (TP) ($)</label>
+                            <input type="number" step="any" id="sim_tp" class="form-control" value="2375.00">
+                        </div>
+
+                        <div class="form-group sim-open-only">
+                            <label for="sim_tech">Technique</label>
+                            <select id="sim_tech" class="form-control">
+                                <option value="FVG Tap">FVG Tap</option>
+                                <option value="Order Block Refinement">Order Block Refinement</option>
+                                <option value="Breaker Block Retest">Breaker Block Retest</option>
+                                <option value="Liquidity Grab">Liquidity Grab</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group sim-open-only">
+                            <label for="sim_session">Execution Session</label>
+                            <select id="sim_session" class="form-control">
+                                <option value="London">London Session</option>
+                                <option value="New York">New York Session</option>
+                                <option value="Asia">Asia Session</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group sim-open-only">
+                            <label for="sim_timeframe">Timeframe alignment</label>
+                            <select id="sim_timeframe" class="form-control">
+                                <option value="15M -> 1M">15M -> 1M Alignment</option>
+                                <option value="1H -> 5M">1H -> 5M Alignment</option>
+                                <option value="4H -> 15M">4H -> 15M Alignment</option>
+                                <option value="15M -> 5M">15M -> 5M Alignment</option>
+                            </select>
+                        </div>
+
+                        <!-- Confirmations Input -->
+                        <div class="form-group form-full sim-open-only">
+                            <label>Confirmation Checklist</label>
+                            <div class="confirmations-checkbox-grid">
+                                <label class="checkbox-item"><input type="checkbox" name="sim_conf" value="Liquidity Sweep"> Liquidity Sweep</label>
+                                <label class="checkbox-item"><input type="checkbox" name="sim_conf" value="MSS (Market Structure Shift)"> MSS (Market Structure Shift)</label>
+                                <label class="checkbox-item"><input type="checkbox" name="sim_conf" value="CHoCH"> CHoCH</label>
+                                <label class="checkbox-item"><input type="checkbox" name="sim_conf" value="FVG Alignment"> FVG Alignment</label>
+                                <label class="checkbox-item"><input type="checkbox" name="sim_conf" value="Discount Pricing"> Discount Pricing</label>
+                                <label class="checkbox-item"><input type="checkbox" name="sim_conf" value="Premium Pricing"> Premium Pricing</label>
+                            </div>
+                        </div>
+
+                        <!-- Close Specifics -->
+                        <div class="form-group sim-close-only" style="display:none;">
+                            <label for="sim_exit">Exit Price ($)</label>
+                            <input type="number" step="any" id="sim_exit" class="form-control" value="2375.00">
+                        </div>
+
+                        <div class="form-group sim-close-only" style="display:none;">
+                            <label for="sim_status">Status</label>
+                            <select id="sim_status" class="form-control" onchange="toggleFailureInput()">
+                                <option value="WON">WON</option>
+                                <option value="LOST">LOST</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group sim-failure-group" style="display:none;">
+                            <label for="sim_failure">Failure Cause</label>
+                            <select id="sim_failure" class="form-control">
+                                <option value="">None (Standard Outcome)</option>
+                                <option value="FOMO">FOMO (Chased Entry)</option>
+                                <option value="Stop Hunt Sweep">Stop Hunt Sweep</option>
+                                <option value="Early Exit">Early Exit (Impatience)</option>
+                                <option value="News Impact">News Impact</option>
+                                <option value="Trend Against">Trend Against</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 1.5rem; text-align: right;">
+                        <button type="submit" class="btn btn-primary">Dispatch Webhook Trigger</button>
+                    </div>
+                </form>
+
+                <div id="simResponse" class="response-box"></div>
+            </div>
+        </div>
+
+        <!-- Tab 3: Trade Journal Logs -->
+        <div id="tab-logs" class="tab-panel">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">XAUUSD Strategy Execution Database</div>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Trade ID</th>
+                                <th>Direction</th>
+                                <th>Entry</th>
+                                <th>SL / TP</th>
+                                <th>Exit</th>
+                                <th>Outcome</th>
+                                <th>Session</th>
+                                <th>Timeframe</th>
+                                <th>Confirmations</th>
+                                <th>PnL (R)</th>
+                                <th>Failure Cause</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradeLogTableBody">
+                            <tr>
+                                <td colspan="13" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                                    Loading database... Make sure bot.py local API is running.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Mock data to load if backend server is offline (Gold focused)
+        const mockAnalysis = {
+            summary: {
+                total_trades: 18,
+                win_rate: 61.1,
+                profit_factor: 2.50,
+                net_r: 12.0,
+                avg_win: 2.2,
+                avg_loss: -1.0,
+                best_trade: 2.5,
+                worst_trade: -1.0
+            },
+            techniques: [
+                { name: "FVG Tap", count: 6, win_rate: 66.7, net_r: 5.0, profit_factor: 3.5 },
+                { name: "Order Block Refinement", count: 5, win_rate: 60.0, net_r: 3.5, profit_factor: 2.0 },
+                { name: "Breaker Block Retest", count: 4, win_rate: 75.0, net_r: 4.5, profit_factor: 5.0 },
+                { name: "Liquidity Grab", count: 3, win_rate: 33.3, net_r: -1.0, profit_factor: 0.5 }
+            ],
+            sessions: [
+                { name: "London", count: 8, win_rate: 75.0, net_r: 9.5, profit_factor: 4.50 },
+                { name: "New York", count: 7, win_rate: 57.1, net_r: 3.5, profit_factor: 2.20 },
+                { name: "Asia", count: 3, win_rate: 0.0, net_r: -3.0, profit_factor: 0.00 }
+            ],
+            confirmations: [
+                { name: "Liquidity Sweep", count: 12, win_rate: 75.0, net_r: 10.0 },
+                { name: "MSS (Market Structure Shift)", count: 10, win_rate: 70.0, net_r: 8.0 },
+                { name: "FVG Alignment", count: 8, win_rate: 62.5, net_r: 5.5 },
+                { name: "Discount Pricing", count: 6, win_rate: 50.0, net_r: 2.0 }
+            ],
+            failure_causes: [
+                { cause: "Stop Hunt Sweep", count: 3, pct: 42.9 },
+                { cause: "FOMO", count: 2, pct: 28.6 },
+                { cause: "News Impact", count: 1, pct: 14.3 },
+                { cause: "Trend Against", count: 1, pct: 14.3 }
+            ]
+        };
+
+        const mockTrades = [
+            { timestamp: "2026-06-19T02:10:00", trade_id: "g-001", pair: "XAUUSD", direction: "BUY", entry_price: 2355.50, sl: 2345.50, tp: 2380.00, exit_price: 2380.00, status: "WON", technique: "Order Block Refinement", session: "London", timeframe: "15M -> 1M", confirmations: "Liquidity Sweep, MSS (Market Structure Shift), FVG Alignment", pnl_r: 2.5, failure_cause: null },
+            { timestamp: "2026-06-18T18:32:00", trade_id: "g-002", pair: "XAUUSD", direction: "SELL", entry_price: 2362.00, sl: 2372.00, tp: 2337.00, exit_price: 2372.00, status: "LOST", technique: "FVG Tap", session: "New York", timeframe: "1H -> 5M", confirmations: "Premium Pricing, FVG Alignment", pnl_r: -1.0, failure_cause: "Stop Hunt Sweep" },
+            { timestamp: "2026-06-18T14:15:00", trade_id: "g-003", pair: "XAUUSD", direction: "BUY", entry_price: 2341.20, sl: 2332.20, tp: 2363.70, exit_price: 2363.70, status: "WON", technique: "Breaker Block Retest", session: "London", timeframe: "15M -> 1M", confirmations: "Liquidity Sweep, MSS (Market Structure Shift)", pnl_r: 2.5, failure_cause: null },
+            { timestamp: "2026-06-17T11:05:00", trade_id: "g-004", pair: "XAUUSD", direction: "BUY", entry_price: 2338.00, sl: 2328.00, tp: 2363.00, exit_price: 2328.00, status: "LOST", technique: "Liquidity Grab", session: "Asia", timeframe: "15M -> 5M", confirmations: "Discount Pricing", pnl_r: -1.0, failure_cause: "Trend Against" }
+        ];
+
+        let pnlChartInstance = null;
+        let failuresChartInstance = null;
+        let sessionChartInstance = null;
+        let confirmationChartInstance = null;
+        let isLive = false;
+        const localServerUrl = "http://localhost:8000";
+
+        // Initialize App
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchLiveStats();
+        });
+
+        // Tab Switching Logic
+        function switchTab(tabId, el) {
+            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+            
+            el.classList.add('active');
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+
+            const title = document.getElementById('pageTitle');
+            const subtitle = document.getElementById('pageSubtitle');
+            
+            if (tabId === 'dashboard') {
+                title.textContent = "GOLD Confirmation Optimizer";
+                subtitle.textContent = "Statistical autopsies on XAUUSD sessions, structures, and confirmations";
+            } else if (tabId === 'simulator') {
+                title.textContent = "Gold Signal Test Chamber";
+                subtitle.textContent = "Dispatch synthetic JSON signals to verify your secure bot listener";
+            } else {
+                title.textContent = "Strategy Execution Log";
+                subtitle.textContent = "Complete history of registered and updated signals";
+            }
+        }
+
+        // Webhook simulator form toggle
+        function toggleFormInputs() {
+            const action = document.getElementById('sim_action').value;
+            const openOnly = document.querySelectorAll('.sim-open-only');
+            const closeOnly = document.querySelectorAll('.sim-close-only');
+            
+            if (action === 'open') {
+                openOnly.forEach(el => el.style.display = 'flex');
+                closeOnly.forEach(el => el.style.display = 'none');
+                document.querySelector('.sim-failure-group').style.display = 'none';
+            } else if (action === 'close') {
+                openOnly.forEach(el => el.style.display = 'none');
+                closeOnly.forEach(el => el.style.display = 'flex');
+                toggleFailureInput();
+            } else { // log
+                openOnly.forEach(el => el.style.display = 'flex');
+                closeOnly.forEach(el => el.style.display = 'flex');
+                toggleFailureInput();
+            }
+        }
+
+        function toggleFailureInput() {
+            const statusVal = document.getElementById('sim_status').value;
+            const action = document.getElementById('sim_action').value;
+            const failGroup = document.querySelector('.sim-failure-group');
+            
+            if (statusVal === 'LOST' && action !== 'open') {
+                failGroup.style.display = 'flex';
+            } else {
+                failGroup.style.display = 'none';
+            }
+        }
+
+        // Send Simulation Signal
+        async function triggerSimulation(e) {
+            e.preventDefault();
+            const action = document.getElementById('sim_action').value;
+            const apiKey = document.getElementById('sim_apikey').value;
+            const responseBox = document.getElementById('simResponse');
+            
+            let tradeId = document.getElementById('sim_id').value.trim();
+            if (!tradeId) {
+                tradeId = "gold-" + Math.floor(Math.random() * 100000);
+            }
+            
+            // Gather checkboxes
+            const checkedConfs = [];
+            document.querySelectorAll('input[name="sim_conf"]:checked').forEach(cb => {
+                checkedConfs.push(cb.value);
+            });
+            const confirmationsString = checkedConfs.join(", ");
+            
+            let url = `${localServerUrl}/trades/open`;
+            let payload = {};
+
+            if (action === 'open') {
+                url = `${localServerUrl}/trades/open`;
+                payload = {
+                    trade_id: tradeId,
+                    pair: "XAUUSD",
+                    direction: document.getElementById('sim_dir').value,
+                    entry_price: parseFloat(document.getElementById('sim_entry').value),
+                    sl: parseFloat(document.getElementById('sim_sl').value),
+                    tp: parseFloat(document.getElementById('sim_tp').value),
+                    technique: document.getElementById('sim_tech').value,
+                    session: document.getElementById('sim_session').value,
+                    timeframe: document.getElementById('sim_timeframe').value,
+                    confirmations: confirmationsString
+                };
+            } else if (action === 'close') {
+                url = `${localServerUrl}/trades/close`;
+                payload = {
+                    trade_id: tradeId,
+                    exit_price: parseFloat(document.getElementById('sim_exit').value),
+                    status: document.getElementById('sim_status').value,
+                    failure_cause: document.getElementById('sim_status').value === 'LOST' ? document.getElementById('sim_failure').value || null : null
+                };
+            } else { // log
+                url = `${localServerUrl}/trades/log`;
+                payload = {
+                    trade_id: tradeId,
+                    pair: "XAUUSD",
+                    direction: document.getElementById('sim_dir').value,
+                    entry_price: parseFloat(document.getElementById('sim_entry').value),
+                    sl: parseFloat(document.getElementById('sim_sl').value),
+                    tp: parseFloat(document.getElementById('sim_tp').value),
+                    exit_price: parseFloat(document.getElementById('sim_exit').value),
+                    status: document.getElementById('sim_status').value,
+                    technique: document.getElementById('sim_tech').value,
+                    session: document.getElementById('sim_session').value,
+                    timeframe: document.getElementById('sim_timeframe').value,
+                    confirmations: confirmationsString,
+                    failure_cause: document.getElementById('sim_status').value === 'LOST' ? document.getElementById('sim_failure').value || null : null
+                };
+            }
+
+            responseBox.style.display = "block";
+            responseBox.style.color = "#fbbf24";
+            responseBox.textContent = `Broadcasting POST request to ${url}...\n\nHeaders: {\n  "X-API-KEY": "${apiKey}"\n}\n\nPayload: ${JSON.stringify(payload, null, 2)}`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-KEY': apiKey
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                responseBox.textContent += `\n\nResponse (${response.status} ${response.statusText}):\n${JSON.stringify(data, null, 2)}`;
+                
+                if (response.ok) {
+                    responseBox.style.color = "#10b981"; // Green
+                    setTimeout(fetchLiveStats, 1000);
+                } else {
+                    responseBox.style.color = "#f43f5e"; // Rose
+                }
+            } catch (err) {
+                responseBox.style.color = "#f43f5e";
+                responseBox.textContent += `\n\nNetwork Failure: ${err.message}\nEnsure your local bot.py listening server is running on port 8000.`;
+            }
+        }
+
+        // Fetch Live API Stats
+        async function fetchLiveStats() {
+            const statusDot = document.getElementById('statusDot');
+            const statusLabel = document.getElementById('statusLabel');
+
+            try {
+                const testRes = await fetch(`${localServerUrl}/`);
+                if (testRes.ok) {
+                    isLive = true;
+                    statusDot.className = "status-dot online";
+                    statusLabel.textContent = "LIVE BACKEND ONLINE";
+                }
+            } catch (err) {
+                isLive = false;
+                statusDot.className = "status-dot";
+                statusLabel.textContent = "OFFLINE MODE";
+            }
+
+            let analysisData = mockAnalysis;
+            let tradesData = mockTrades;
+
+            if (isLive) {
+                try {
+                    const analysisRes = await fetch(`${localServerUrl}/analysis`);
+                    const analysisJson = await analysisRes.json();
+                    if (analysisJson.status === "success") {
+                        analysisData = analysisJson;
+                    }
+
+                    const tradesRes = await fetch(`${localServerUrl}/trades`);
+                    const tradesJson = await tradesRes.json();
+                    if (tradesJson.status === "success") {
+                        tradesData = tradesJson.trades;
+                    }
+                } catch (e) {
+                    console.error("Failed to load live backend data, fallback to offline values", e);
+                }
+            }
+
+            renderDashboard(analysisData, tradesData);
+        }
+
+        // Render Dashboard Data
+        function renderDashboard(analysis, trades) {
+            const sum = analysis.summary;
+            document.getElementById('stat-winrate').textContent = `${sum.win_rate.toFixed(1)}%`;
+            document.getElementById('stat-netr').textContent = `${sum.net_r >= 0 ? '+' : ''}${sum.net_r.toFixed(2)}R`;
+            document.getElementById('stat-pf').textContent = sum.profit_factor.toFixed(2);
+            document.getElementById('stat-total').textContent = sum.total_trades;
+
+            const total = sum.total_trades;
+            const winsCount = Math.round(total * (sum.win_rate / 100));
+            const lossesCount = total - winsCount;
+            document.getElementById('stat-winslosses').textContent = `${winsCount} Wins / ${lossesCount} Losses`;
+
+            const netCard = document.getElementById('stat-netr');
+            if (sum.net_r > 0) {
+                netCard.style.color = "var(--neon-green)";
+            } else if (sum.net_r < 0) {
+                netCard.style.color = "var(--neon-rose)";
+            } else {
+                netCard.style.color = "var(--text-primary)";
+            }
+
+            renderPnLChart(trades);
+            renderFailuresChart(analysis.failure_causes);
+            renderSessionChart(analysis.sessions);
+            renderConfirmationChart(analysis.confirmations);
+            generateDirectivesHTML(analysis, trades);
+            populateLogsTable(trades);
+        }
+
+        // Generate Cumulative PnL Curve
+        function renderPnLChart(trades) {
+            const ctx = document.getElementById('pnlChart').getContext('2d');
+            if (pnlChartInstance) pnlChartInstance.destroy();
+
+            const closedTrades = trades
+                .filter(t => t.status === 'WON' || t.status === 'LOST')
+                .reverse(); // oldest first
+
+            let cumulative = 0;
+            const labels = ["Start"];
+            const data = [0];
+
+            closedTrades.forEach((t, i) => {
+                cumulative += parseFloat(t.pnl_r || 0);
+                labels.push(`#${i+1}`);
+                data.push(cumulative);
+            });
+
+            pnlChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Cumulative Expectancy (R)',
+                        data: data,
+                        borderColor: '#fbbf24',
+                        backgroundColor: 'rgba(251, 191, 36, 0.08)',
+                        fill: true,
+                        tension: 0.3,
+                        borderWidth: 3,
+                        pointBackgroundColor: '#fbbf24',
+                        pointBorderColor: '#0b0f19',
+                        pointBorderWidth: 2,
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.03)' },
+                            ticks: { color: '#9ca3af' }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#9ca3af' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render Failures Doughnut Chart
+        function renderFailuresChart(failures) {
+            const ctx = document.getElementById('failuresChart').getContext('2d');
+            if (failuresChartInstance) failuresChartInstance.destroy();
+
+            if (!failures || failures.length === 0) {
+                failuresChartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ["No Failures Logged"],
+                        datasets: [{ data: [1], backgroundColor: ['rgba(255, 255, 255, 0.05)'] }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+                return;
+            }
+
+            failuresChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: failures.map(f => f.cause),
+                    datasets: [{
+                        data: failures.map(f => f.count),
+                        backgroundColor: [
+                            'rgba(244, 63, 94, 0.8)',  // Rose
+                            'rgba(245, 158, 11, 0.8)',  // Amber
+                            'rgba(59, 130, 246, 0.8)',  // Blue
+                            'rgba(168, 85, 247, 0.8)',  // Purple
+                            'rgba(236, 72, 153, 0.8)'   // Pink
+                        ],
+                        borderColor: '#0b0f19',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: { color: '#f3f4f6', font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render Session Performance Bar Chart
+        function renderSessionChart(sessions) {
+            const ctx = document.getElementById('sessionChart').getContext('2d');
+            if (sessionChartInstance) sessionChartInstance.destroy();
+
+            if (!sessions || sessions.length === 0) {
+                sessionChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels: ["No Data"], datasets: [{ data: [0] }] },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+                return;
+            }
+
+            sessionChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sessions.map(s => s.name),
+                    datasets: [{
+                        label: 'Session Net R',
+                        data: sessions.map(s => s.net_r),
+                        backgroundColor: sessions.map(s => s.net_r >= 0 ? 'rgba(16, 185, 129, 0.75)' : 'rgba(244, 63, 94, 0.75)'),
+                        borderColor: sessions.map(s => s.net_r >= 0 ? 'var(--neon-green)' : 'var(--neon-rose)'),
+                        borderWidth: 1.5,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#9ca3af' }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#9ca3af' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render Confirmation Win Rates Chart
+        function renderConfirmationChart(confirmations) {
+            const ctx = document.getElementById('confirmationChart').getContext('2d');
+            if (confirmationChartInstance) confirmationChartInstance.destroy();
+
+            if (!confirmations || confirmations.length === 0) {
+                confirmationChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels: ["No Data"], datasets: [{ data: [0] }] },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+                return;
+            }
+
+            confirmationChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: confirmations.map(c => c.name),
+                    datasets: [
+                        {
+                            label: 'Win Rate (%)',
+                            data: confirmations.map(c => c.win_rate),
+                            backgroundColor: 'rgba(251, 191, 36, 0.75)',
+                            borderColor: 'var(--neon-gold)',
+                            borderWidth: 1.5,
+                            borderRadius: 6,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Total Uses (Count)',
+                            data: confirmations.map(c => c.count),
+                            backgroundColor: 'rgba(59, 130, 246, 0.4)',
+                            borderColor: 'var(--neon-blue)',
+                            borderWidth: 1.5,
+                            borderRadius: 6,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#9ca3af', font: { size: 10 } }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Win Rate (%)', color: '#9ca3af' },
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#9ca3af' },
+                            min: 0,
+                            max: 100
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Usage Count', color: '#9ca3af' },
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: '#9ca3af', stepSize: 1 }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Rule-Based Directives Generator (Confirmation focus)
+        function generateDirectivesHTML(analysis, trades) {
+            const container = document.getElementById('directiveContainer');
+            container.innerHTML = '';
+
+            let doubleDownDirectives = [];
+            let changeDirectives = [];
+            let stopDirectives = [];
+
+            // 1. Session checks
+            if (analysis.sessions && analysis.sessions.length > 0) {
+                analysis.sessions.forEach(s => {
+                    if (s.count >= 3) {
+                        if (s.win_rate >= 60) {
+                            doubleDownDirectives.push(`Execute in **${s.name} Session**: High performance detected (Win Rate: ${s.win_rate}%, Net R: +${s.net_r}R).`);
+                        } else if (s.win_rate < 40) {
+                            stopDirectives.push(`Stop execution in **${s.name} Session**: Negative expectancy verified (Win Rate: ${s.win_rate}% over ${s.count} trades).`);
+                        }
+                    }
+                });
+            }
+
+            // 2. Confirmation checks
+            if (analysis.confirmations && analysis.confirmations.length > 0) {
+                analysis.confirmations.forEach(c => {
+                    if (c.count >= 3) {
+                        if (c.win_rate >= 65) {
+                            doubleDownDirectives.push(`Require **${c.name}** confirmation: Trades with this flag yield a strong ${c.win_rate}% win rate (+${c.net_r}R).`);
+                        } else if (c.win_rate < 40) {
+                            stopDirectives.push(`Halt blind entry setups on **${c.name}** (Win Rate: ${c.win_rate}%). Validation is failing.`);
+                        }
+                    }
+                });
+            }
+
+            // 3. Fallback leaks
+            if (analysis.failure_causes && analysis.failure_causes.length > 0) {
+                const topFail = analysis.failure_causes[0];
+                if (topFail.pct >= 40.0) {
+                    changeDirectives.push(`Mental leak detected: **${topFail.cause}** makes up ${topFail.pct}% of all losses. Restrict sizing when this trigger is close.`);
+                }
+            }
+
+            if (doubleDownDirectives.length === 0) {
+                doubleDownDirectives.push("Gathering trade data... No high expectancy session/confirmation edge identified yet.");
+            }
+            if (changeDirectives.length === 0) {
+                changeDirectives.push("No major timeframe or system leaks flagged in current logs.");
+            }
+            if (stopDirectives.length === 0) {
+                stopDirectives.push("All confirmation limits are currently operating within acceptable boundaries.");
+            }
+
+            // Render Double Down
+            doubleDownDirectives.forEach(text => {
+                container.innerHTML += `
+                    <div class="directive-item directive-double">
+                        <div class="directive-icon">🔥</div>
+                        <div class="directive-body">
+                            <h4>Double Down On</h4>
+                            <p>${formatMarkdownBold(text)}</p>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Render Changes
+            changeDirectives.forEach(text => {
+                container.innerHTML += `
+                    <div class="directive-item directive-change">
+                        <div class="directive-icon">🛠️</div>
+                        <div class="directive-body">
+                            <h4>What to Change</h4>
+                            <p>${formatMarkdownBold(text)}</p>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Render Stop List
+            stopDirectives.forEach(text => {
+                container.innerHTML += `
+                    <div class="directive-item directive-stop">
+                        <div class="directive-icon">🚫</div>
+                        <div class="directive-body">
+                            <h4>What to Stop</h4>
+                            <p>${formatMarkdownBold(text)}</p>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function formatMarkdownBold(text) {
+            return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        }
+
+        let activeTradesList = [];
+
+        // Populate Table Rows
+        function populateLogsTable(trades) {
+            const tbody = document.getElementById('tradeLogTableBody');
+            tbody.innerHTML = '';
+
+            // Update global trade store for modal pre-population
+            activeTradesList = trades;
+
+            if (trades.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="13" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No trades recorded in database.</td></tr>`;
+                return;
+            }
+
+            trades.forEach(t => {
+                const dateObj = new Date(t.timestamp);
+                const dateString = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                let outcomeBadge = `<span class="badge badge-open">OPEN</span>`;
+                if (t.status === 'WON') {
+                    outcomeBadge = `<span class="badge badge-won">WON</span>`;
+                } else if (t.status === 'LOST') {
+                    outcomeBadge = `<span class="badge badge-lost">LOST</span>`;
+                }
+
+                const pnlText = t.status === 'OPEN' ? '-' : `${t.pnl_r >= 0 ? '+' : ''}${parseFloat(t.pnl_r).toFixed(2)}R`;
+                
+                tbody.innerHTML += `
+                    <tr>
+                        <td style="color: var(--text-secondary); font-size: 0.8rem;">${dateString}</td>
+                        <td><code style="background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; font-family: monospace;">${t.trade_id}</code></td>
+                        <td style="color: ${t.direction.toUpperCase() === 'BUY' ? 'var(--neon-green)' : 'var(--neon-rose)'}; font-weight: 600;">${t.direction.toUpperCase()}</td>
+                        <td>$${parseFloat(t.entry_price).toFixed(2)}</td>
+                        <td style="font-size: 0.8rem; color: var(--text-secondary);">
+                            SL: $${parseFloat(t.sl).toFixed(2)}<br>
+                            TP: $${parseFloat(t.tp).toFixed(2)}
+                        </td>
+                        <td>${t.exit_price ? '$' + parseFloat(t.exit_price).toFixed(2) : '-'}</td>
+                        <td>${outcomeBadge}</td>
+                        <td>${t.session || '-'}</td>
+                        <td><span style="font-size:0.8rem; background:rgba(255,255,255,0.03); padding: 2px 6px; border-radius:4px;">${t.timeframe || '-'}</span></td>
+                        <td style="font-size: 0.8rem; color: var(--text-secondary); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${t.confirmations || ''}">${t.confirmations || '-'}</td>
+                        <td style="font-weight: bold; color: ${t.pnl_r > 0 ? 'var(--neon-green)' : (t.pnl_r < 0 ? 'var(--neon-rose)' : 'inherit')};">${pnlText}</td>
+                        <td style="color: var(--neon-amber); font-weight: 500;">${t.failure_cause || '-'}</td>
+                        <td>
+                            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(251, 191, 36, 0.15); color: var(--neon-gold); border-color: rgba(251, 191, 36, 0.3);" onclick="openEditModal('${t.trade_id}')">Edit</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        // Modal Logic
+        function openEditModal(tradeId) {
+            const trade = activeTradesList.find(t => t.trade_id === tradeId);
+            if (!trade) return;
+
+            document.getElementById('edit_trade_id').value = trade.trade_id;
+            document.getElementById('edit_direction').value = trade.direction.toUpperCase();
+            document.getElementById('edit_status').value = trade.status.toUpperCase();
+            document.getElementById('edit_entry_price').value = trade.entry_price;
+            document.getElementById('edit_exit_price').value = trade.exit_price !== null && trade.exit_price !== undefined ? trade.exit_price : '';
+            document.getElementById('edit_sl').value = trade.sl;
+            document.getElementById('edit_tp').value = trade.tp;
+            document.getElementById('edit_session').value = trade.session || 'N/A';
+            document.getElementById('edit_timeframe').value = trade.timeframe || '';
+            document.getElementById('edit_pips_gained').value = trade.pips_gained !== null && trade.pips_gained !== undefined ? trade.pips_gained : '';
+            document.getElementById('edit_is_risk_free').value = trade.is_risk_free ? "1" : "0";
+            document.getElementById('edit_confirmations').value = trade.confirmations || '';
+            document.getElementById('edit_failure_cause').value = trade.failure_cause || '';
+
+            toggleEditFailureInput();
+
+            document.getElementById('editModal').style.display = 'flex';
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+
+        function toggleEditFailureInput() {
+            const status = document.getElementById('edit_status').value;
+            const group = document.getElementById('edit_failure_group');
+            if (status === 'LOST') {
+                group.style.display = 'block';
+            } else {
+                group.style.display = 'none';
+            }
+        }
+
+        async function submitTradeEdit(e) {
+            e.preventDefault();
+            const tradeId = document.getElementById('edit_trade_id').value;
+            const apiKey = document.getElementById('sim_apikey').value || 'test-api-key';
+
+            const exitPriceVal = document.getElementById('edit_exit_price').value;
+            const pipsGainedVal = document.getElementById('edit_pips_gained').value;
+
+            const payload = {
+                direction: document.getElementById('edit_direction').value,
+                status: document.getElementById('edit_status').value,
+                entry_price: parseFloat(document.getElementById('edit_entry_price').value),
+                exit_price: exitPriceVal ? parseFloat(exitPriceVal) : null,
+                sl: parseFloat(document.getElementById('edit_sl').value),
+                tp: parseFloat(document.getElementById('edit_tp').value),
+                session: document.getElementById('edit_session').value,
+                timeframe: document.getElementById('edit_timeframe').value,
+                pips_gained: pipsGainedVal ? parseFloat(pipsGainedVal) : null,
+                is_risk_free: parseInt(document.getElementById('edit_is_risk_free').value),
+                confirmations: document.getElementById('edit_confirmations').value || null,
+                failure_cause: document.getElementById('edit_status').value === 'LOST' ? document.getElementById('edit_failure_cause').value || null : null
+            };
+
+            const url = `${localServerUrl}/trades/${tradeId}`;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-KEY': apiKey
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    closeEditModal();
+                    fetchLiveStats(); // reload stats and charts
+                } else {
+                    alert(`Failed to save edit: ${data.detail || 'Unknown error'}`);
+                }
+            } catch (err) {
+                alert(`Error saving edit: ${err.message}. Make sure API is running.`);
+            }
+        }
+    </script>
+
+    <!-- Edit Trade Modal Markup -->
+    <div id="editModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="card-title" style="font-size: 1.4rem;">Edit Trade Parameter Override</h2>
+                <button class="modal-close" onclick="closeEditModal()">&times;</button>
+            </div>
+            <form id="editForm" onsubmit="submitTradeEdit(event)">
+                <input type="hidden" id="edit_trade_id">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="edit_direction">Direction</label>
+                        <select id="edit_direction" class="form-control">
+                            <option value="BUY">BUY</option>
+                            <option value="SELL">SELL</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_status">Status</label>
+                        <select id="edit_status" class="form-control" onchange="toggleEditFailureInput()">
+                            <option value="OPEN">OPEN</option>
+                            <option value="WON">WON</option>
+                            <option value="LOST">LOST</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_entry_price">Entry Price ($)</label>
+                        <input type="number" step="any" id="edit_entry_price" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_exit_price">Exit Price ($)</label>
+                        <input type="number" step="any" id="edit_exit_price" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_sl">Stop Loss ($)</label>
+                        <input type="number" step="any" id="edit_sl" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_tp">Take Profit ($)</label>
+                        <input type="number" step="any" id="edit_tp" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_session">Session</label>
+                        <select id="edit_session" class="form-control">
+                            <option value="London">London</option>
+                            <option value="New York">New York</option>
+                            <option value="Asia">Asia</option>
+                            <option value="N/A">N/A</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_timeframe">Timeframe</label>
+                        <input type="text" id="edit_timeframe" class="form-control" placeholder="e.g. 15M -> 1M">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_pips_gained">Pips Gained / Lost</label>
+                        <input type="number" step="any" id="edit_pips_gained" class="form-control" placeholder="e.g. 50 or -30">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_is_risk_free">Risk-Free Status</label>
+                        <select id="edit_is_risk_free" class="form-control">
+                            <option value="0">Standard (Not Risk-Free)</option>
+                            <option value="1">Risk-Free / Break-Even</option>
+                        </select>
+                    </div>
+                    <div class="form-group form-full">
+                        <label for="edit_confirmations">Confirmations (Comma separated)</label>
+                        <input type="text" id="edit_confirmations" class="form-control" placeholder="e.g. MSS, CHoCH, Sweep">
+                    </div>
+                    <div class="form-group form-full" id="edit_failure_group" style="display: none;">
+                        <label for="edit_failure_cause">Failure Cause</label>
+                        <select id="edit_failure_cause" class="form-control">
+                            <option value="">None (Standard Outcome)</option>
+                            <option value="FOMO">FOMO (Chased Entry)</option>
+                            <option value="Stop Hunt Sweep">Stop Hunt Sweep</option>
+                            <option value="Early Exit">Early Exit (Impatience)</option>
+                            <option value="News Impact">News Impact</option>
+                            <option value="Trend Against">Trend Against</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem;">
+                    <button type="button" class="btn" onclick="closeEditModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
