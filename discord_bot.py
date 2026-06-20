@@ -2,6 +2,8 @@ import discord
 import re
 import logging
 import sys
+import ssl
+import aiohttp
 from datetime import datetime
 from typing import Optional, Dict
 from config import settings
@@ -154,6 +156,16 @@ class AuQuantClient(discord.Client):
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             self.db = None
+
+    async def login(self, token: str) -> None:
+        # Create SSL-bypassing connector inside async context (running event loop required)
+        # This must happen BEFORE super().login() calls static_login() which creates the session
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        self.http.connector = aiohttp.TCPConnector(ssl=ssl_context)
+        logger.info("SSL certificate verification bypassed (proxy/VPN environment)")
+        await super().login(token)
 
     async def on_ready(self):
         logger.info(f"Logged in as {self.user.name} (ID: {self.user.id})")
@@ -387,3 +399,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
