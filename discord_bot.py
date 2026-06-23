@@ -158,13 +158,15 @@ class AuQuantClient(discord.Client):
             self.db = None
 
     async def login(self, token: str) -> None:
-        # Create SSL-bypassing connector inside async context (running event loop required)
-        # This must happen BEFORE super().login() calls static_login() which creates the session
+        # discord.py's HTTPClient.static_login() checks:
+        #   if self.connector is MISSING: self.connector = aiohttp.TCPConnector(limit=0)
+        # By setting http.connector BEFORE super().login() → static_login(), we ensure
+        # the ClientSession is created with our SSL-bypassing connector.
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
-        self.http.connector = aiohttp.TCPConnector(ssl=ssl_context)
-        logger.info("SSL certificate verification bypassed (proxy/VPN environment)")
+        self.http.connector = aiohttp.TCPConnector(limit=0, ssl=ssl_context)
+        logger.info("Injected SSL-bypass connector (for proxy/VPN environments)")
         await super().login(token)
 
     async def on_ready(self):
