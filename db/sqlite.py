@@ -193,3 +193,12 @@ class SQLiteDataStore(AbstractDataStore):
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
+
+    def delete_trade(self, trade_id: str) -> bool:
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM trades WHERE trade_id = ?", (trade_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
+        conn.close()
+        return deleted

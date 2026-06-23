@@ -160,6 +160,21 @@ class PostgresDataStore(AbstractDataStore):
         finally:
             session.close()
 
+    def delete_trade(self, trade_id: str) -> bool:
+        session = self.Session()
+        try:
+            trade = session.query(Trade).filter(Trade.trade_id == trade_id).first()
+            if not trade:
+                return False
+            session.delete(trade)
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+
     def _to_dict(self, trade: Trade) -> Dict:
         return {
             "trade_id": trade.trade_id,

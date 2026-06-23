@@ -337,6 +337,17 @@ def update_trade(trade_id: str, req: TradeUpdateRequest):
         logger.error(f"Error updating trade {trade_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/trades/{trade_id}", response_model=dict, dependencies=[Depends(verify_api_key)])
+def delete_trade(trade_id: str):
+    """Delete a trade from the database."""
+    try:
+        db.delete_trade(trade_id)
+        logger.info(f"Trade {trade_id} deleted successfully.")
+        return {"status": "success", "message": f"Trade {trade_id} deleted."}
+    except Exception as e:
+        logger.error(f"Error deleting trade {trade_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/trades")
 def get_trades():
     """

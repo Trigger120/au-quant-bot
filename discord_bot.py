@@ -21,10 +21,15 @@ logger = logging.getLogger("AuQuantDiscordBot")
 
 # Parser logic
 def parse_discord_message(content: str) -> Optional[Dict]:
-    content_upper = content.upper()
+    # Clean Discord formatting: strip markdown bold, role/user mentions, emojis
+    clean = re.sub(r'\*\*(.+?)\*\*', r'\1', content)  # **bold** -> bold
+    clean = re.sub(r'<@[&!]?\d+>', '', clean)           # <@&role_id> or <@user_id>
+    clean = re.sub(r'\(.*?\)', '', clean)                # (TEST MSG) parenthetical notes
+    clean = clean.strip()
+    content_upper = clean.upper()
     
-    # Pre-check: only process if it relates to GOLD or XAUUSD
-    if "GOLD" not in content_upper and "XAUUSD" not in content_upper:
+    # Pre-check: only process if it relates to GOLD, XAUUSD, or XAU
+    if not any(k in content_upper for k in ["GOLD", "XAUUSD", "XAU", "$XAU"]):
         return None
         
     # Helper to find float numbers
@@ -103,12 +108,16 @@ def parse_discord_message(content: str) -> Optional[Dict]:
             "raw": content
         }
 
-    # 4. Open Signal
-    if "BUY" in content_upper or "SELL" in content_upper:
-        direction = "BUY" if "BUY" in content_upper else "SELL"
-        entry_price = find_float_after_keywords(content, ["at", "@", "entry", "price", "buy", "sell"])
+    # 4. Open Signal — supports BUY/SELL/LONG/SHORT
+    has_direction = any(k in content_upper for k in ["BUY", "SELL", "LONG", "SHORT"])
+    if has_direction:
+        if "BUY" in content_upper or "LONG" in content_upper:
+            direction = "BUY"
+        else:
+            direction = "SELL"
+        entry_price = find_float_after_keywords(clean, ["e", "at", "@", "entry", "price", "buy", "sell", "long", "short"])
         if entry_price is None:
-            floats = re.findall(r'\b\d{4}(?:\.\d+)?\b', content)
+            floats = re.findall(r'\b\d{4}(?:\.\d+)?\b', clean)
             if floats:
                 entry_price = float(floats[0])
                 

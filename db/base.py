@@ -43,6 +43,14 @@ class AbstractDataStore(ABC):
         """
         pass
 
+    @abstractmethod
+    def delete_trade(self, trade_id: str) -> bool:
+        """
+        Delete a trade by trade_id.
+        Returns True if successful.
+        """
+        pass
+
     @staticmethod
     def calculate_r_multiple(trade: Dict) -> float:
         """

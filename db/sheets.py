@@ -188,3 +188,12 @@ class GoogleSheetsDataStore(AbstractDataStore):
         records = self.sheet.get_all_records()
         records.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         return records
+
+    def delete_trade(self, trade_id: str) -> bool:
+        trade_ids = self.sheet.col_values(1)
+        try:
+            row_idx = trade_ids.index(trade_id) + 1
+            self.sheet.delete_rows(row_idx)
+            return True
+        except ValueError:
+            return False
