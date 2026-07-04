@@ -189,6 +189,7 @@ class AuQuantClient(discord.Client):
         print(f"Au Quant Bot Discord Client is ONLINE. Running as {self.user.name}.")
 
     async def on_message(self, message):
+        import os
         # Ignore messages from the bot itself
         if message.author.id == self.user.id:
             return
@@ -212,8 +213,14 @@ class AuQuantClient(discord.Client):
             await message.channel.send("⚠️ **Au Quant Bot Error**: Database connection is not available.")
             return
 
+        # Resolve target user for Discord bot signals
+        user_id = os.getenv("DISCORD_USER_ID")
+        if not user_id:
+            first_user = self.db.get_first_user()
+            user_id = first_user["user_id"] if first_user else "default"
+
         # Fetch active open trades to match
-        all_trades = self.db.get_all_trades()
+        all_trades = self.db.get_all_trades(user_id)
         open_trades = [t for t in all_trades if t.get("status") == "OPEN"]
         
         # Check if a specific trade_id is mentioned in the message text
@@ -255,7 +262,7 @@ class AuQuantClient(discord.Client):
                     "confirmations": signal["confirmations"],
                     "status": "OPEN",
                     "is_risk_free": 0
-                })
+                }, user_id)
                 
                 risk_emoji = "🟢" if risk_value >= 1.0 else "🟡"
                 embed = discord.Embed(
@@ -286,7 +293,7 @@ class AuQuantClient(discord.Client):
             try:
                 trade_id = matched_trade["trade_id"]
                 # Update SL to entry price and set risk-free = 1
-                self.db.update_trade(trade_id, {
+                self.db.update_trade(trade_id, user_id, {
                     "sl": matched_trade["entry_price"],
                     "is_risk_free": 1
                 })
@@ -313,7 +320,7 @@ class AuQuantClient(discord.Client):
                 gained_pips = signal["pips_gained"] or 0.0
                 new_pips = current_pips + gained_pips
                 
-                self.db.update_trade(trade_id, {
+                self.db.update_trade(trade_id, user_id, {
                     "pips_gained": new_pips
                 })
                 
@@ -370,10 +377,10 @@ class AuQuantClient(discord.Client):
                 if signal["failure_cause"]:
                     update_data["failure_cause"] = signal["failure_cause"]
                     
-                self.db.update_trade(trade_id, update_data)
+                self.db.update_trade(trade_id, user_id, update_data)
                 
                 # Fetch finalized trade to get calculated R-multiple
-                finalized_trades = self.db.get_all_trades()
+                finalized_trades = self.db.get_all_trades(user_id)
                 finalized = next((t for t in finalized_trades if t["trade_id"] == trade_id), matched_trade)
                 r_val = finalized.get("pnl_r", 0.0)
                 

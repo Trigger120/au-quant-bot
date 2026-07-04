@@ -8,6 +8,7 @@ class SQLiteDataStore(AbstractDataStore):
     """
     SQLite engine for local storage. Suitable for local testing and lightweight setups.
     Includes auto-migration of columns for session, timeframe, and confirmations.
+    Also handles user authentication records and filters all trades by user_id.
     """
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -17,10 +18,21 @@ class SQLiteDataStore(AbstractDataStore):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        # Create users table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        
         # Create table with new fields
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS trades (
                 trade_id TEXT PRIMARY KEY,
+                user_id TEXT,
                 timestamp TEXT NOT NULL,
                 pair TEXT NOT NULL,
                 direction TEXT NOT NULL,
@@ -44,6 +56,8 @@ class SQLiteDataStore(AbstractDataStore):
         cursor.execute("PRAGMA table_info(trades)")
         columns = [row[1] for row in cursor.fetchall()]
         
+        if "user_id" not in columns:
+            cursor.execute("ALTER TABLE trades ADD COLUMN user_id TEXT")
         if "session" not in columns:
             cursor.execute("ALTER TABLE trades ADD COLUMN session TEXT")
         if "timeframe" not in columns:
@@ -58,7 +72,51 @@ class SQLiteDataStore(AbstractDataStore):
         conn.commit()
         conn.close()
 
-    def add_trade(self, trade_data: Dict) -> str:
+    def create_user(self, email: str, password_hash: str) -> Optional[Dict]:
+        user_id = str(uuid.uuid4())[:8]
+        created_at = datetime.utcnow().isoformat()
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        try:
+            # Check if this is the first user
+            cursor.execute("SELECT COUNT(*) FROM users")
+            count = cursor.fetchone()[0]
+
+            cursor.execute(
+                "INSERT INTO users (user_id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, email.lower(), password_hash, created_at)
+            )
+
+            # If first user, migrate trades
+            if count == 0:
+                cursor.execute("UPDATE trades SET user_id = ? WHERE user_id = 'default' OR user_id IS NULL", (user_id,))
+
+            conn.commit()
+            return {"user_id": user_id, "email": email.lower(), "created_at": created_at}
+        except sqlite3.IntegrityError:
+            return None
+        finally:
+            conn.close()
+
+    def get_user_by_email(self, email: str) -> Optional[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = ?", (email.lower(),))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_first_user(self) -> Optional[Dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users LIMIT 1")
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def add_trade(self, trade_data: Dict, user_id: str) -> str:
         trade_id = trade_data.get("trade_id") or str(uuid.uuid4())[:8]
         timestamp = trade_data.get("timestamp") or datetime.utcnow().isoformat()
         
@@ -91,12 +149,12 @@ class SQLiteDataStore(AbstractDataStore):
 
         cursor.execute("""
             INSERT OR REPLACE INTO trades (
-                trade_id, timestamp, pair, direction, entry_price, sl, tp, 
+                trade_id, user_id, timestamp, pair, direction, entry_price, sl, tp, 
                 exit_price, status, technique, failure_cause, pnl_r,
                 session, timeframe, confirmations, pips_gained, is_risk_free
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            trade_id, timestamp, trade_data["pair"].upper(), trade_data["direction"].upper(),
+            trade_id, user_id, timestamp, trade_data["pair"].upper(), trade_data["direction"].upper(),
             float(trade_data["entry_price"]), float(trade_data["sl"]), float(trade_data["tp"]),
             float(exit_price) if exit_price is not None else None,
             status.upper(), technique, failure_cause, pnl_r,
@@ -109,12 +167,12 @@ class SQLiteDataStore(AbstractDataStore):
         conn.close()
         return trade_id
 
-    def update_trade(self, trade_id: str, update_data: Dict) -> bool:
+    def update_trade(self, trade_id: str, user_id: str, update_data: Dict) -> bool:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        cursor.execute("SELECT * FROM trades WHERE trade_id = ?", (trade_id,))
+        cursor.execute("SELECT * FROM trades WHERE trade_id = ? AND user_id = ?", (trade_id, user_id))
         row = cursor.fetchone()
         if not row:
             conn.close()
@@ -162,42 +220,43 @@ class SQLiteDataStore(AbstractDataStore):
             values.append(trade.get(field))
             
         values.append(trade_id)
+        values.append(user_id)
         
-        sql = f"UPDATE trades SET {', '.join(set_clauses)} WHERE trade_id = ?"
+        sql = f"UPDATE trades SET {', '.join(set_clauses)} WHERE trade_id = ? AND user_id = ?"
         cursor.execute(sql, tuple(values))
         
         conn.commit()
         conn.close()
         return True
 
-    def get_closed_trades(self, limit: Optional[int] = None) -> List[Dict]:
+    def get_closed_trades(self, user_id: str, limit: Optional[int] = None) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        query = "SELECT * FROM trades WHERE status IN ('WON', 'LOST') ORDER BY timestamp DESC"
+        query = "SELECT * FROM trades WHERE user_id = ? AND status IN ('WON', 'LOST') ORDER BY timestamp DESC"
         if limit:
             query += f" LIMIT {limit}"
             
-        cursor.execute(query)
+        cursor.execute(query, (user_id,))
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
 
-    def get_all_trades(self) -> List[Dict]:
+    def get_all_trades(self, user_id: str) -> List[Dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        cursor.execute("SELECT * FROM trades ORDER BY timestamp DESC")
+        cursor.execute("SELECT * FROM trades WHERE user_id = ? ORDER BY timestamp DESC", (user_id,))
         rows = cursor.fetchall()
         conn.close()
         return [dict(row) for row in rows]
 
-    def delete_trade(self, trade_id: str) -> bool:
+    def delete_trade(self, trade_id: str, user_id: str) -> bool:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM trades WHERE trade_id = ?", (trade_id,))
+        cursor.execute("DELETE FROM trades WHERE trade_id = ? AND user_id = ?", (trade_id, user_id))
         conn.commit()
         deleted = cursor.rowcount > 0
         conn.close()

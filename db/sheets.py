@@ -13,7 +13,7 @@ class GoogleSheetsDataStore(AbstractDataStore):
     Ideal for manual monitoring alongside automated analytics.
     """
     HEADERS = [
-        "trade_id", "timestamp", "pair", "direction", "entry_price", 
+        "trade_id", "user_id", "timestamp", "pair", "direction", "entry_price", 
         "sl", "tp", "exit_price", "status", "technique", "failure_cause", "pnl_r",
         "session", "timeframe", "confirmations", "pips_gained", "is_risk_free"
     ]
@@ -67,7 +67,19 @@ class GoogleSheetsDataStore(AbstractDataStore):
                 for idx in range(len(existing_headers), len(self.HEADERS)):
                     self.sheet.update_cell(1, idx + 1, self.HEADERS[idx])
 
-    def add_trade(self, trade_data: Dict) -> str:
+    def create_user(self, email: str, password_hash: str) -> Optional[Dict]:
+        # Google Sheets is single-user, return default dict
+        return {"user_id": "default", "email": email.lower(), "created_at": datetime.utcnow().isoformat()}
+
+    def get_user_by_email(self, email: str) -> Optional[Dict]:
+        # Return default credentials to bypass auth on Sheets configs
+        from auth import get_password_hash
+        return {"user_id": "default", "email": email.lower(), "password_hash": get_password_hash("default"), "created_at": datetime.utcnow().isoformat()}
+
+    def get_first_user(self) -> Optional[Dict]:
+        return {"user_id": "default", "email": "default@example.com", "created_at": datetime.utcnow().isoformat()}
+
+    def add_trade(self, trade_data: Dict, user_id: str) -> str:
         trade_id = trade_data.get("trade_id") or str(uuid.uuid4())[:8]
         timestamp = trade_data.get("timestamp") or datetime.utcnow().isoformat()
         exit_price = trade_data.get("exit_price")
@@ -95,6 +107,7 @@ class GoogleSheetsDataStore(AbstractDataStore):
 
         row = [
             trade_id,
+            user_id,
             timestamp,
             trade_data["pair"].upper(),
             trade_data["direction"].upper(),
@@ -116,13 +129,14 @@ class GoogleSheetsDataStore(AbstractDataStore):
         self.sheet.append_row(row)
         return trade_id
 
-    def update_trade(self, trade_id: str, update_data: Dict) -> bool:
-        # Find row by trade_id
-        trade_ids = self.sheet.col_values(1)
-        try:
-            # 1-based index
-            row_idx = trade_ids.index(trade_id) + 1
-        except ValueError:
+    def update_trade(self, trade_id: str, user_id: str, update_data: Dict) -> bool:
+        records = self.sheet.get_all_records()
+        row_idx = None
+        for idx, r in enumerate(records):
+            if str(r.get("trade_id")) == trade_id and str(r.get("user_id")) == user_id:
+                row_idx = idx + 2
+                break
+        if row_idx is None:
             return False
 
         # Get existing row
@@ -169,31 +183,35 @@ class GoogleSheetsDataStore(AbstractDataStore):
         new_row = [trade.get(h, "") for h in self.HEADERS]
 
         # Update the entire row in one call
-        col_letter = chr(ord('A') + len(self.HEADERS) - 1)  # Q for 17 columns
+        col_letter = chr(ord('A') + len(self.HEADERS) - 1)  # R for 18 columns
         row_range = f"A{row_idx}:{col_letter}{row_idx}"
         
         self.sheet.update(row_range, [new_row])
         return True
 
-    def get_closed_trades(self, limit: Optional[int] = None) -> List[Dict]:
+    def get_closed_trades(self, user_id: str, limit: Optional[int] = None) -> List[Dict]:
         records = self.sheet.get_all_records()
-        closed = [r for r in records if r.get("status") in ["WON", "LOST"]]
+        closed = [r for r in records if str(r.get("user_id")) == user_id and r.get("status") in ["WON", "LOST"]]
         # Sort by timestamp descending
         closed.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
         if limit:
             closed = closed[:limit]
         return closed
 
-    def get_all_trades(self) -> List[Dict]:
+    def get_all_trades(self, user_id: str) -> List[Dict]:
         records = self.sheet.get_all_records()
-        records.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-        return records
+        filtered = [r for r in records if str(r.get("user_id")) == user_id]
+        filtered.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        return filtered
 
-    def delete_trade(self, trade_id: str) -> bool:
-        trade_ids = self.sheet.col_values(1)
-        try:
-            row_idx = trade_ids.index(trade_id) + 1
-            self.sheet.delete_rows(row_idx)
-            return True
-        except ValueError:
+    def delete_trade(self, trade_id: str, user_id: str) -> bool:
+        records = self.sheet.get_all_records()
+        row_idx = None
+        for idx, r in enumerate(records):
+            if str(r.get("trade_id")) == trade_id and str(r.get("user_id")) == user_id:
+                row_idx = idx + 2
+                break
+        if row_idx is None:
             return False
+        self.sheet.delete_rows(row_idx)
+        return True

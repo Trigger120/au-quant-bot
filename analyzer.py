@@ -7,11 +7,17 @@ import requests
 from config import settings
 from db import get_db
 
-def load_data() -> pd.DataFrame:
+def load_data(user_id: Optional[str] = None) -> pd.DataFrame:
     """Fetch closed trades from database and return as pandas DataFrame."""
     try:
         db = get_db()
-        trades = db.get_closed_trades()
+        if not user_id:
+            user_id = os.getenv("ANALYZER_USER_ID")
+        if not user_id:
+            first_user = db.get_first_user()
+            user_id = first_user["user_id"] if first_user else "default"
+            
+        trades = db.get_closed_trades(user_id)
         if not trades:
             return pd.DataFrame()
         return pd.DataFrame(trades)
@@ -250,10 +256,17 @@ def run_autopsy(df: pd.DataFrame) -> str:
 
 def main():
     print("Initializing statistical autopsy...")
-    df = load_data()
+    db = get_db()
+    user_id = os.getenv("ANALYZER_USER_ID")
+    if not user_id:
+        first_user = db.get_first_user()
+        user_id = first_user["user_id"] if first_user else "default"
+        
+    print(f"Target user: {user_id}")
+    df = load_data(user_id)
     
     if df.empty:
-        print("No closed trades found in the data store. Exiting analysis.")
+        print(f"No closed trades found in the data store for user {user_id}. Exiting analysis.")
         sys.exit(0)
         
     report_md = run_autopsy(df)

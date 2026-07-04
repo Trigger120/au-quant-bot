@@ -3,6 +3,8 @@ from typing import Optional
 from fastapi import FastAPI, Header, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 import requests
+import os
+import auth
 from config import settings
 from db import get_db
 
@@ -11,9 +13,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("TradingWebhookBot")
 
 app = FastAPI(
-    title="GOLD Webhook Journal Listener",
-    description="FastAPI Webhook receiver customized for GOLD confirmation trading.",
-    version="2.0.0"
+    title="Au Quant SaaS API Server",
+    description="FastAPI Service with JWT Auth and Multi-User data isolation.",
+    version="3.0.0"
 )
 
 # Enable CORS for frontend dashboard access
@@ -33,7 +35,7 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize database backend: {e}")
 
-# ----------------- Security Dependency -----------------
+# ----------------- Security Dependencies -----------------
 def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-KEY")):
     """
     Dependency to verify the incoming webhook requests.
@@ -46,6 +48,19 @@ def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-KEY")):
             detail="Invalid or missing API Key (X-API-KEY header)"
         )
     return x_api_key
+
+def get_current_user(email: str = Depends(auth.get_current_user_email)) -> dict:
+    """
+    Dependency to authenticate and retrieve the currently logged in user.
+    """
+    user = db.get_user_by_email(email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
 
 # ----------------- Discord Helper -----------------
 def send_discord_alert(title: str, description: str, color: int = 3066993, fields: list = None):
@@ -77,6 +92,14 @@ def send_discord_alert(title: str, description: str, color: int = 3066993, field
         logger.error(f"Failed to send Discord webhook: {e}")
 
 # ----------------- Request Schemas -----------------
+class UserRegisterRequest(BaseModel):
+    email: str = Field(..., description="Unique email address")
+    password: str = Field(..., description="Plaintext password")
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., description="Email address")
+    password: str = Field(..., description="Plaintext password")
+
 class TradeOpenRequest(BaseModel):
     pair: str = Field("XAUUSD", description="Asset pair (defaults to XAUUSD / GOLD)")
     direction: str = Field(..., description="BUY or SELL")
@@ -90,6 +113,8 @@ class TradeOpenRequest(BaseModel):
     trade_id: Optional[str] = Field(None, description="Optional unique identifier")
     pips_gained: Optional[float] = Field(None, description="Pips gained")
     is_risk_free: Optional[int] = Field(0, description="1 if break-even/risk-free, 0 otherwise")
+    user_id: Optional[str] = Field(None, description="Optional target user ID (for M2M integrations)")
+    user_email: Optional[str] = Field(None, description="Optional target user email (for M2M integrations)")
 
 class TradeCloseRequest(BaseModel):
     trade_id: str = Field(..., description="Unique trade ID to close")
@@ -101,6 +126,8 @@ class TradeCloseRequest(BaseModel):
     confirmations: Optional[str] = Field(None, description="Optionally update/correct the Confirmations")
     pips_gained: Optional[float] = Field(None, description="Pips gained at exit/partial")
     is_risk_free: Optional[int] = Field(None, description="Risk free status")
+    user_id: Optional[str] = Field(None, description="Optional target user ID (for M2M integrations)")
+    user_email: Optional[str] = Field(None, description="Optional target user email (for M2M integrations)")
 
 class TradeLogRequest(BaseModel):
     pair: str = Field("XAUUSD", description="Asset pair")
@@ -118,6 +145,8 @@ class TradeLogRequest(BaseModel):
     trade_id: Optional[str] = Field(None, description="Optional ID")
     pips_gained: Optional[float] = Field(None, description="Pips gained")
     is_risk_free: Optional[int] = Field(0, description="1 if risk-free, 0 otherwise")
+    user_id: Optional[str] = Field(None, description="Optional target user ID")
+    user_email: Optional[str] = Field(None, description="Optional target user email")
 
 class TradeUpdateRequest(BaseModel):
     pair: Optional[str] = None
@@ -135,21 +164,90 @@ class TradeUpdateRequest(BaseModel):
     pips_gained: Optional[float] = None
     is_risk_free: Optional[int] = None
 
-# ----------------- Endpoints -----------------
+# Helper to resolve target user ID for webhook endpoints
+def resolve_webhook_user(u_id: Optional[str], u_email: Optional[str]) -> str:
+    if u_id:
+        return u_id
+    if u_email:
+        user = db.get_user_by_email(u_email)
+        if user:
+            return user["user_id"]
+    
+    # Fallback: get the first user in the database
+    first = db.get_first_user()
+    if first:
+        return first["user_id"]
+        
+    return "default"
+
+# ----------------- Authentication Endpoints -----------------
+
+@app.post("/register", response_model=dict)
+def register_user(req: UserRegisterRequest):
+    """Register a new student account."""
+    existing = db.get_user_by_email(req.email)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email address is already registered."
+        )
+    
+    # Check if first user to handle migrations
+    first_user = db.get_first_user()
+    is_first = (first_user is None)
+    
+    pwd_hash = auth.get_password_hash(req.password)
+    user = db.create_user(req.email, pwd_hash)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Registration failed. Please try again."
+        )
+        
+    return {
+        "status": "success",
+        "message": "User registered successfully.",
+        "user": {
+            "user_id": user["user_id"],
+            "email": user["email"],
+            "created_at": user["created_at"]
+        }
+    }
+
+@app.post("/login", response_model=dict)
+def login_user(req: LoginRequest):
+    """Authenticate a student and return a JWT access token."""
+    user = db.get_user_by_email(req.email)
+    if not user or not auth.verify_password(req.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect email or password."
+        )
+        
+    access_token = auth.create_access_token(data={"sub": user["email"]})
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "email": user["email"],
+        "user_id": user["user_id"]
+    }
+
+# ----------------- Core Endpoints -----------------
 
 @app.get("/")
 def read_root():
     return {
         "status": "online",
-        "system": "Au Quant Bot Trading Journal API",
+        "system": "Au Quant SaaS Trading Journal API",
         "database_backend": settings.DATABASE_TYPE
     }
 
 @app.post("/trades/open", response_model=dict, dependencies=[Depends(verify_api_key)])
 def open_trade(req: TradeOpenRequest):
     """
-    Open a new active position and persist it to the journal.
+    Open a new active position and persist it to the journal (machine-to-machine webhook).
     """
+    target_user_id = resolve_webhook_user(req.user_id, req.user_email)
     try:
         t_id = db.add_trade({
             "trade_id": req.trade_id,
@@ -165,9 +263,9 @@ def open_trade(req: TradeOpenRequest):
             "status": "OPEN",
             "pips_gained": req.pips_gained,
             "is_risk_free": req.is_risk_free or 0
-        })
+        }, target_user_id)
         
-        logger.info(f"Opened trade successfully: ID={t_id}, Pair={req.pair}, Direction={req.direction}")
+        logger.info(f"Opened trade successfully for user {target_user_id}: ID={t_id}, Pair={req.pair}, Direction={req.direction}")
         
         # Dispatch to Discord
         fields = [
@@ -198,8 +296,9 @@ def open_trade(req: TradeOpenRequest):
 @app.post("/trades/close", response_model=dict, dependencies=[Depends(verify_api_key)])
 def close_trade(req: TradeCloseRequest):
     """
-    Close an open trade by updating its exit parameters, status, and failure cause.
+    Close an open trade by updating its exit parameters, status, and failure cause (webhook).
     """
+    target_user_id = resolve_webhook_user(req.user_id, req.user_email)
     try:
         update_data = {
             "exit_price": req.exit_price,
@@ -217,12 +316,12 @@ def close_trade(req: TradeCloseRequest):
         if req.is_risk_free is not None:
             update_data["is_risk_free"] = req.is_risk_free
 
-        success = db.update_trade(req.trade_id, update_data)
+        success = db.update_trade(req.trade_id, target_user_id, update_data)
         
         if not success:
-            raise HTTPException(status_code=404, detail=f"Trade with ID {req.trade_id} not found")
+            raise HTTPException(status_code=404, detail=f"Trade with ID {req.trade_id} not found for user {target_user_id}")
             
-        logger.info(f"Closed trade successfully: ID={req.trade_id}, Status={req.status}, Exit={req.exit_price}")
+        logger.info(f"Closed trade successfully for user {target_user_id}: ID={req.trade_id}, Status={req.status}, Exit={req.exit_price}")
         
         color = 3066993 if req.status.upper() == "WON" else 15158332
         fields = [
@@ -252,8 +351,9 @@ def close_trade(req: TradeCloseRequest):
 @app.post("/trades/log", response_model=dict, dependencies=[Depends(verify_api_key)])
 def log_historical_trade(req: TradeLogRequest):
     """
-    Directly archive a completed historical trade.
+    Directly archive a completed historical trade (webhook).
     """
+    target_user_id = resolve_webhook_user(req.user_id, req.user_email)
     try:
         t_id = db.add_trade({
             "trade_id": req.trade_id,
@@ -271,9 +371,9 @@ def log_historical_trade(req: TradeLogRequest):
             "failure_cause": req.failure_cause,
             "pips_gained": req.pips_gained,
             "is_risk_free": req.is_risk_free or 0
-        })
+        }, target_user_id)
         
-        logger.info(f"Archived historical trade successfully: ID={t_id}, Pair={req.pair}, Status={req.status}")
+        logger.info(f"Archived historical trade successfully for user {target_user_id}: ID={t_id}, Pair={req.pair}, Status={req.status}")
         
         color = 3066993 if req.status.upper() == "WON" else 15158332
         fields = [
@@ -303,20 +403,20 @@ def log_historical_trade(req: TradeLogRequest):
         logger.error(f"Error archiving trade: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/trades/{trade_id}", response_model=dict, dependencies=[Depends(verify_api_key)])
-def update_trade(trade_id: str, req: TradeUpdateRequest):
+@app.put("/trades/{trade_id}", response_model=dict)
+def update_trade(trade_id: str, req: TradeUpdateRequest, user: dict = Depends(get_current_user)):
     """
-    Manually update any trade parameter dynamically.
+    Manually update any trade parameter dynamically (user isolated).
     """
     try:
         # filter out None values so we only update specified fields
         update_data = {k: v for k, v in req.model_dump().items() if v is not None}
         
-        success = db.update_trade(trade_id, update_data)
+        success = db.update_trade(trade_id, user["user_id"], update_data)
         if not success:
             raise HTTPException(status_code=404, detail=f"Trade with ID {trade_id} not found")
             
-        logger.info(f"Updated trade successfully: ID={trade_id}, data={update_data}")
+        logger.info(f"Updated trade successfully for user {user['user_id']}: ID={trade_id}, data={update_data}")
         
         # Dispatch update notifications to Discord
         fields = [{"name": "Trade ID", "value": f"`{trade_id}`", "inline": True}]
@@ -337,37 +437,41 @@ def update_trade(trade_id: str, req: TradeUpdateRequest):
         logger.error(f"Error updating trade {trade_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/trades/{trade_id}", response_model=dict, dependencies=[Depends(verify_api_key)])
-def delete_trade(trade_id: str):
-    """Delete a trade from the database."""
+@app.delete("/trades/{trade_id}", response_model=dict)
+def delete_trade(trade_id: str, user: dict = Depends(get_current_user)):
+    """Delete a trade from the database (user isolated)."""
     try:
-        db.delete_trade(trade_id)
-        logger.info(f"Trade {trade_id} deleted successfully.")
+        success = db.delete_trade(trade_id, user["user_id"])
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Trade with ID {trade_id} not found")
+        logger.info(f"Trade {trade_id} deleted successfully for user {user['user_id']}.")
         return {"status": "success", "message": f"Trade {trade_id} deleted."}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error deleting trade {trade_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/trades")
-def get_trades():
+def get_trades(user: dict = Depends(get_current_user)):
     """
-    Get all trades from the database.
+    Get all trades from the database for the authenticated user.
     """
     try:
-        trades = db.get_all_trades()
+        trades = db.get_all_trades(user["user_id"])
         return {"status": "success", "trades": trades}
     except Exception as e:
         logger.error(f"Error fetching trades: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/analysis")
-def get_analysis():
+def get_analysis(user: dict = Depends(get_current_user)):
     """
-    Perform on-the-fly pandas analysis and return JSON summary with Sessions and Confirmations.
+    Perform on-the-fly pandas analysis and return JSON summary with Sessions and Confirmations (user isolated).
     """
     try:
         import pandas as pd
-        trades = db.get_closed_trades()
+        trades = db.get_closed_trades(user["user_id"])
         if not trades:
             return {
                 "status": "success",
@@ -510,6 +614,29 @@ def get_analysis():
         }
     except Exception as e:
         logger.error(f"Error performing dynamic analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/directive")
+def get_directive(user: dict = Depends(get_current_user)):
+    """
+    Generate dynamic quantitative strategy autopsy directives for the user.
+    """
+    try:
+        import pandas as pd
+        from analyzer import run_autopsy
+        
+        trades = db.get_closed_trades(user["user_id"])
+        if not trades or len(trades) < 3:
+            return {
+                "status": "success",
+                "directive": "### Dynamic Strategy Directives\nNeed at least 3 closed trades to generate quantitative insights. Keep logging!"
+            }
+            
+        df = pd.DataFrame(trades)
+        report_md = run_autopsy(df)
+        return {"status": "success", "directive": report_md}
+    except Exception as e:
+        logger.error(f"Error generating dynamic directive: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

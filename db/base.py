@@ -14,7 +14,22 @@ class AbstractDataStore(ABC):
         pass
 
     @abstractmethod
-    def add_trade(self, trade_data: Dict) -> str:
+    def create_user(self, email: str, password_hash: str) -> Optional[Dict]:
+        """Create a new user, return user dict or None if exists."""
+        pass
+
+    @abstractmethod
+    def get_user_by_email(self, email: str) -> Optional[Dict]:
+        """Get user by email."""
+        pass
+
+    @abstractmethod
+    def get_first_user(self) -> Optional[Dict]:
+        """Get the first registered user in the database."""
+        pass
+
+    @abstractmethod
+    def add_trade(self, trade_data: Dict, user_id: str) -> str:
         """
         Log a new trade to the database.
         Returns the generated or passed trade_id.
@@ -22,7 +37,7 @@ class AbstractDataStore(ABC):
         pass
 
     @abstractmethod
-    def update_trade(self, trade_id: str, update_data: Dict) -> bool:
+    def update_trade(self, trade_id: str, user_id: str, update_data: Dict) -> bool:
         """
         Update an existing trade (e.g. close trade, exit price, status, failure cause).
         Returns True if successful, False otherwise.
@@ -30,21 +45,21 @@ class AbstractDataStore(ABC):
         pass
 
     @abstractmethod
-    def get_closed_trades(self, limit: Optional[int] = None) -> List[Dict]:
+    def get_closed_trades(self, user_id: str, limit: Optional[int] = None) -> List[Dict]:
         """
         Retrieve list of closed trades for statistical analysis.
         """
         pass
 
     @abstractmethod
-    def get_all_trades(self) -> List[Dict]:
+    def get_all_trades(self, user_id: str) -> List[Dict]:
         """
         Retrieve all trades in the database.
         """
         pass
 
     @abstractmethod
-    def delete_trade(self, trade_id: str) -> bool:
+    def delete_trade(self, trade_id: str, user_id: str) -> bool:
         """
         Delete a trade by trade_id.
         Returns True if successful.

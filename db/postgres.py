@@ -1,16 +1,25 @@
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
-from sqlalchemy import create_engine, Column, String, Float
+from sqlalchemy import create_engine, Column, String, Float, Integer
 from sqlalchemy.orm import declarative_base, sessionmaker
 from db.base import AbstractDataStore
 
 Base = declarative_base()
 
+class User(Base):
+    __tablename__ = 'users'
+    
+    user_id = Column(String, primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(String, nullable=False)
+
 class Trade(Base):
     __tablename__ = 'trades'
     
     trade_id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=True)
     timestamp = Column(String, nullable=False)
     pair = Column(String, nullable=False)
     direction = Column(String, nullable=False)
@@ -42,7 +51,68 @@ class PostgresDataStore(AbstractDataStore):
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
 
-    def add_trade(self, trade_data: Dict) -> str:
+    def create_user(self, email: str, password_hash: str) -> Optional[Dict]:
+        session = self.Session()
+        user_id = str(uuid.uuid4())[:8]
+        created_at = datetime.utcnow().isoformat()
+        try:
+            # Check if this is the first user
+            count = session.query(User).count()
+            
+            exists = session.query(User).filter(User.email == email.lower()).first()
+            if exists:
+                return None
+                
+            user = User(user_id=user_id, email=email.lower(), password_hash=password_hash, created_at=created_at)
+            session.add(user)
+            
+            if count == 0:
+                # Migrate default/orphaned trades to the first registered user
+                trades_to_migrate = session.query(Trade).filter(
+                    (Trade.user_id == 'default') | (Trade.user_id == None)
+                ).all()
+                for t in trades_to_migrate:
+                    t.user_id = user_id
+                    
+            session.commit()
+            return {"user_id": user_id, "email": email.lower(), "created_at": created_at}
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+
+    def get_user_by_email(self, email: str) -> Optional[Dict]:
+        session = self.Session()
+        try:
+            user = session.query(User).filter(User.email == email.lower()).first()
+            if not user:
+                return None
+            return {
+                "user_id": user.user_id, 
+                "email": user.email, 
+                "password_hash": user.password_hash, 
+                "created_at": user.created_at
+            }
+        finally:
+            session.close()
+
+    def get_first_user(self) -> Optional[Dict]:
+        session = self.Session()
+        try:
+            user = session.query(User).first()
+            if not user:
+                return None
+            return {
+                "user_id": user.user_id, 
+                "email": user.email, 
+                "password_hash": user.password_hash, 
+                "created_at": user.created_at
+            }
+        finally:
+            session.close()
+
+    def add_trade(self, trade_data: Dict, user_id: str) -> str:
         session = self.Session()
         trade_id = trade_data.get("trade_id") or str(uuid.uuid4())[:8]
         timestamp = trade_data.get("timestamp") or datetime.utcnow().isoformat()
@@ -74,6 +144,7 @@ class PostgresDataStore(AbstractDataStore):
         try:
             trade = Trade(
                 trade_id=trade_id,
+                user_id=user_id,
                 timestamp=timestamp,
                 pair=trade_data["pair"].upper(),
                 direction=trade_data["direction"].upper(),
@@ -101,10 +172,10 @@ class PostgresDataStore(AbstractDataStore):
             
         return trade_id
 
-    def update_trade(self, trade_id: str, update_data: Dict) -> bool:
+    def update_trade(self, trade_id: str, user_id: str, update_data: Dict) -> bool:
         session = self.Session()
         try:
-            trade = session.query(Trade).filter(Trade.trade_id == trade_id).first()
+            trade = session.query(Trade).filter(Trade.trade_id == trade_id, Trade.user_id == user_id).first()
             if not trade:
                 return False
             
@@ -141,10 +212,10 @@ class PostgresDataStore(AbstractDataStore):
         finally:
             session.close()
 
-    def get_closed_trades(self, limit: Optional[int] = None) -> List[Dict]:
+    def get_closed_trades(self, user_id: str, limit: Optional[int] = None) -> List[Dict]:
         session = self.Session()
         try:
-            query = session.query(Trade).filter(Trade.status.in_(["WON", "LOST"])).order_by(Trade.timestamp.desc())
+            query = session.query(Trade).filter(Trade.user_id == user_id, Trade.status.in_(["WON", "LOST"])).order_by(Trade.timestamp.desc())
             if limit:
                 query = query.limit(limit)
             trades = query.all()
@@ -152,18 +223,18 @@ class PostgresDataStore(AbstractDataStore):
         finally:
             session.close()
 
-    def get_all_trades(self) -> List[Dict]:
+    def get_all_trades(self, user_id: str) -> List[Dict]:
         session = self.Session()
         try:
-            trades = session.query(Trade).order_by(Trade.timestamp.desc()).all()
+            trades = session.query(Trade).filter(Trade.user_id == user_id).order_by(Trade.timestamp.desc()).all()
             return [self._to_dict(t) for t in trades]
         finally:
             session.close()
 
-    def delete_trade(self, trade_id: str) -> bool:
+    def delete_trade(self, trade_id: str, user_id: str) -> bool:
         session = self.Session()
         try:
-            trade = session.query(Trade).filter(Trade.trade_id == trade_id).first()
+            trade = session.query(Trade).filter(Trade.trade_id == trade_id, Trade.user_id == user_id).first()
             if not trade:
                 return False
             session.delete(trade)
@@ -178,6 +249,7 @@ class PostgresDataStore(AbstractDataStore):
     def _to_dict(self, trade: Trade) -> Dict:
         return {
             "trade_id": trade.trade_id,
+            "user_id": trade.user_id,
             "timestamp": trade.timestamp,
             "pair": trade.pair,
             "direction": trade.direction,
