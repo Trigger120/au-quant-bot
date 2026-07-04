@@ -62,6 +62,48 @@ def get_current_user(email: str = Depends(auth.get_current_user_email)) -> dict:
         )
     return user
 
+from fastapi import Request
+from jose import jwt, JWTError
+from auth import SECRET_KEY, ALGORITHM
+
+def get_current_user_or_webhook(request: Request) -> dict:
+    """
+    Dual authentication dependency. Supports X-API-KEY header for machines/bots,
+    and JWT Bearer token in Authorization header for the frontend web app.
+    """
+    # 1. Check for API key (webhook/machine-to-machine)
+    x_api_key = request.headers.get("X-API-KEY")
+    if x_api_key:
+        if settings.API_KEY and x_api_key == settings.API_KEY:
+            return {"user_id": "webhook", "is_webhook": True}
+        else:
+            logger.warning("Unauthorized API access attempt detected via Webhook key.")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API Key"
+            )
+            
+    # 2. Check for JWT Bearer token (user dashboard)
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            email = payload.get("sub")
+            if email:
+                user = db.get_user_by_email(email)
+                if user:
+                    user["is_webhook"] = False
+                    return user
+        except JWTError:
+            pass
+            
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
 # ----------------- Discord Helper -----------------
 def send_discord_alert(title: str, description: str, color: int = 3066993, fields: list = None):
     """
@@ -242,12 +284,15 @@ def read_root():
         "database_backend": settings.DATABASE_TYPE
     }
 
-@app.post("/trades/open", response_model=dict, dependencies=[Depends(verify_api_key)])
-def open_trade(req: TradeOpenRequest):
+@app.post("/trades/open", response_model=dict)
+def open_trade(req: TradeOpenRequest, auth_user: dict = Depends(get_current_user_or_webhook)):
     """
-    Open a new active position and persist it to the journal (machine-to-machine webhook).
+    Open a new active position and persist it to the journal.
     """
-    target_user_id = resolve_webhook_user(req.user_id, req.user_email)
+    if auth_user.get("is_webhook"):
+        target_user_id = resolve_webhook_user(req.user_id, req.user_email)
+    else:
+        target_user_id = auth_user["user_id"]
     try:
         t_id = db.add_trade({
             "trade_id": req.trade_id,
@@ -293,12 +338,15 @@ def open_trade(req: TradeOpenRequest):
         logger.error(f"Error opening trade: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/trades/close", response_model=dict, dependencies=[Depends(verify_api_key)])
-def close_trade(req: TradeCloseRequest):
+@app.post("/trades/close", response_model=dict)
+def close_trade(req: TradeCloseRequest, auth_user: dict = Depends(get_current_user_or_webhook)):
     """
-    Close an open trade by updating its exit parameters, status, and failure cause (webhook).
+    Close an open trade by updating its exit parameters, status, and failure cause.
     """
-    target_user_id = resolve_webhook_user(req.user_id, req.user_email)
+    if auth_user.get("is_webhook"):
+        target_user_id = resolve_webhook_user(req.user_id, req.user_email)
+    else:
+        target_user_id = auth_user["user_id"]
     try:
         update_data = {
             "exit_price": req.exit_price,
@@ -348,12 +396,15 @@ def close_trade(req: TradeCloseRequest):
         logger.error(f"Error closing trade: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/trades/log", response_model=dict, dependencies=[Depends(verify_api_key)])
-def log_historical_trade(req: TradeLogRequest):
+@app.post("/trades/log", response_model=dict)
+def log_historical_trade(req: TradeLogRequest, auth_user: dict = Depends(get_current_user_or_webhook)):
     """
-    Directly archive a completed historical trade (webhook).
+    Directly archive a completed historical trade.
     """
-    target_user_id = resolve_webhook_user(req.user_id, req.user_email)
+    if auth_user.get("is_webhook"):
+        target_user_id = resolve_webhook_user(req.user_id, req.user_email)
+    else:
+        target_user_id = auth_user["user_id"]
     try:
         t_id = db.add_trade({
             "trade_id": req.trade_id,
